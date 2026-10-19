@@ -1,0 +1,10 @@
+{
+  "id": "thinkcell-planner",
+  "name": "ThinkCell Planner",
+  "version": "1.0.0",
+  "minAppVersion": "1.4.0",
+  "description": "Create Think-Cell style project plans and Gantt charts in 16:9 PPT size. Export as SVG editable in PowerPoint.",
+  "author": "Yanqing Wang",
+  "authorUrl": "https://github.com/yanqingwang",
+  "isDesktopOnly": false
+}
