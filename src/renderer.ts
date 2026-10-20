@@ -5,8 +5,8 @@ import { formatDate } from './parser';
 export const CANVAS_WIDTH = 1280;
 export const CANVAS_HEIGHT = 720;
 
-/** 布局常量 */
-const MARGIN = { top: 90, right: 40, bottom: 60, left: 220 };
+/** 布局常量（导出给 main.ts 做像素→日期反算） */
+export const MARGIN = { top: 90, right: 40, bottom: 60, left: 220 };
 const TITLE_HEIGHT = 50;
 const AXIS_HEIGHT = 40;
 const ROW_HEIGHT = 32;
@@ -112,8 +112,9 @@ function taskColor(t: ParsedTask): string {
 
 /**
  * 渲染甘特图为 SVG 字符串（纯标准元素，PowerPoint 可转换为形状）
+ * @returns SVG 字符串 + 坐标映射（task name → 位置），用于交互式拖拽
  */
-export function renderGanttSvg(plan: ParsedPlan): string {
+export function renderGanttSvg(plan: ParsedPlan): { svg: string; coords: Map<string, { x1: number; x2: number; cy: number; milestone: boolean }> } {
     const chartWidth = CANVAS_WIDTH - MARGIN.left - MARGIN.right;
     const scale = buildTimeScale(plan.startDate, plan.endDate, chartWidth);
 
@@ -158,6 +159,9 @@ export function renderGanttSvg(plan: ParsedPlan): string {
     );
     // 背景
     parts.push(`<rect x="0" y="0" width="${CANVAS_WIDTH}" height="${svgHeight}" fill="#FFFFFF"/>`);
+
+    // 坐标映射，用于交互式拖拽
+    const coords = new Map<string, { x1: number; x2: number; cy: number; milestone: boolean }>();
 
     // 标题
     parts.push(
@@ -224,27 +228,37 @@ export function renderGanttSvg(plan: ParsedPlan): string {
             // 菱形里程碑
             const cx = x1;
             parts.push(
-                `<path d="M ${cx} ${barCy - MILESTONE_SIZE} L ${cx + MILESTONE_SIZE} ${barCy} L ${cx} ${barCy + MILESTONE_SIZE} L ${cx - MILESTONE_SIZE} ${barCy} Z" fill="${color}" stroke="#FFFFFF" stroke-width="1"/>`
+                `<path d="M ${cx} ${barCy - MILESTONE_SIZE} L ${cx + MILESTONE_SIZE} ${barCy} L ${cx} ${barCy + MILESTONE_SIZE} L ${cx - MILESTONE_SIZE} ${barCy} Z" fill="${color}" stroke="#FFFFFF" stroke-width="1" data-tc-task="${escapeXml(t.name)}" data-tc-milestone="1"/>`
             );
             taskBarCenters.set(t.name, { x1: cx, x2: cx, cy: barCy });
+            coords.set(t.name, { x1: cx, x2: cx, cy: barCy, milestone: true });
         } else {
             const bw = Math.max(x2 - x1, 3);
             // 主条
             parts.push(
-                `<rect x="${x1}" y="${barCy - BAR_HEIGHT / 2}" width="${bw}" height="${BAR_HEIGHT}" fill="${color}" rx="2"/>`
+                `<rect x="${x1}" y="${barCy - BAR_HEIGHT / 2}" width="${bw}" height="${BAR_HEIGHT}" fill="${color}" rx="2" data-tc-task="${escapeXml(t.name)}" data-tc-bar="1" data-tc-drag="body"/>`
             );
-            // 进度条
+            // 进度条（也可拖）
             if (t.progress !== undefined && t.progress > 0) {
                 const pw = (bw * Math.min(t.progress, 100)) / 100;
                 parts.push(
-                    `<rect x="${x1}" y="${barCy - BAR_HEIGHT / 2}" width="${pw}" height="${BAR_HEIGHT}" fill="#000000" opacity="0.25" rx="2"/>`
+                    `<rect x="${x1}" y="${barCy - BAR_HEIGHT / 2}" width="${pw}" height="${BAR_HEIGHT}" fill="#000000" opacity="0.25" rx="2" data-tc-task="${escapeXml(t.name)}" data-tc-drag="body" pointer-events="none"/>`
                 );
             }
+            // 端点（不可见透明 rect，专门用来捕获左右拖拽）
+            const endHit = 6;
+            parts.push(
+                `<rect x="${x1 - endHit}" y="${barCy - BAR_HEIGHT / 2 - 2}" width="${endHit * 2}" height="${BAR_HEIGHT + 4}" fill="transparent" data-tc-task="${escapeXml(t.name)}" data-tc-drag="left"/>`
+            );
+            parts.push(
+                `<rect x="${x2 - endHit}" y="${barCy - BAR_HEIGHT / 2 - 2}" width="${endHit * 2}" height="${BAR_HEIGHT + 4}" fill="transparent" data-tc-task="${escapeXml(t.name)}" data-tc-drag="right"/>`
+            );
             // 日期标签（条右侧）
             parts.push(
                 `<text x="${x2 + 6}" y="${barCy + 4}" font-size="11" fill="${COLOR_AXIS}">${formatDate(t.startDate)} – ${formatDate(t.endDate)}</text>`
             );
             taskBarCenters.set(t.name, { x1, x2, cy: barCy });
+            coords.set(t.name, { x1, x2, cy: barCy, milestone: false });
         }
     }
 
@@ -288,5 +302,5 @@ export function renderGanttSvg(plan: ParsedPlan): string {
     }
 
     parts.push('</svg>');
-    return parts.join('\n');
+    return { svg: parts.join('\n'), coords };
 }

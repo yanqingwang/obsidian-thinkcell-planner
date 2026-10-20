@@ -25,6 +25,8 @@ export interface Task {
     color?: string;
     /** 依赖的任务名称（绘制箭头） */
     dependsOn?: string[];
+    /** dependsOn 的别名（与 dependsOn 等价，解析时二选一） */
+    depends?: string[];
 }
 
 export interface ProjectPlan {

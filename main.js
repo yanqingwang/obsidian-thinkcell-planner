@@ -132,6 +132,7 @@ function parsePlan(source) {
   const lanes = [];
   const laneSet = /* @__PURE__ */ new Set();
   raw.tasks.forEach((t, idx) => {
+    var _a;
     if (!t.name) {
       throw new Error(`Task #${idx + 1} is missing "name".`);
     }
@@ -156,8 +157,11 @@ function parsePlan(source) {
       laneSet.add(lane);
       lanes.push(lane);
     }
+    const rawDeps = (_a = t.dependsOn) != null ? _a : t.depends;
+    const dependsOn = rawDeps && Array.isArray(rawDeps) && rawDeps.length > 0 ? rawDeps.filter((x) => typeof x === "string" && x.length > 0) : void 0;
     parsedTasks.push({
       ...t,
+      dependsOn,
       startDate: startDate2,
       endDate: endDate2,
       rowIndex: idx
@@ -317,6 +321,7 @@ function renderGanttSvg(plan) {
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS_WIDTH}" height="${svgHeight}" viewBox="0 0 ${CANVAS_WIDTH} ${svgHeight}" font-family="${FONT_FAMILY}">`
   );
   parts.push(`<rect x="0" y="0" width="${CANVAS_WIDTH}" height="${svgHeight}" fill="#FFFFFF"/>`);
+  const coords = /* @__PURE__ */ new Map();
   parts.push(
     `<text x="${CANVAS_WIDTH / 2}" y="${MARGIN.top - AXIS_HEIGHT - 12}" text-anchor="middle" font-size="26" font-weight="bold" fill="${COLOR_TEXT}">${escapeXml(plan.title)}</text>`
   );
@@ -366,24 +371,33 @@ function renderGanttSvg(plan) {
     if (t.milestone) {
       const cx = x1;
       parts.push(
-        `<path d="M ${cx} ${barCy - MILESTONE_SIZE} L ${cx + MILESTONE_SIZE} ${barCy} L ${cx} ${barCy + MILESTONE_SIZE} L ${cx - MILESTONE_SIZE} ${barCy} Z" fill="${color}" stroke="#FFFFFF" stroke-width="1"/>`
+        `<path d="M ${cx} ${barCy - MILESTONE_SIZE} L ${cx + MILESTONE_SIZE} ${barCy} L ${cx} ${barCy + MILESTONE_SIZE} L ${cx - MILESTONE_SIZE} ${barCy} Z" fill="${color}" stroke="#FFFFFF" stroke-width="1" data-tc-task="${escapeXml(t.name)}" data-tc-milestone="1"/>`
       );
       taskBarCenters.set(t.name, { x1: cx, x2: cx, cy: barCy });
+      coords.set(t.name, { x1: cx, x2: cx, cy: barCy, milestone: true });
     } else {
       const bw = Math.max(x2 - x1, 3);
       parts.push(
-        `<rect x="${x1}" y="${barCy - BAR_HEIGHT / 2}" width="${bw}" height="${BAR_HEIGHT}" fill="${color}" rx="2"/>`
+        `<rect x="${x1}" y="${barCy - BAR_HEIGHT / 2}" width="${bw}" height="${BAR_HEIGHT}" fill="${color}" rx="2" data-tc-task="${escapeXml(t.name)}" data-tc-bar="1" data-tc-drag="body"/>`
       );
       if (t.progress !== void 0 && t.progress > 0) {
         const pw = bw * Math.min(t.progress, 100) / 100;
         parts.push(
-          `<rect x="${x1}" y="${barCy - BAR_HEIGHT / 2}" width="${pw}" height="${BAR_HEIGHT}" fill="#000000" opacity="0.25" rx="2"/>`
+          `<rect x="${x1}" y="${barCy - BAR_HEIGHT / 2}" width="${pw}" height="${BAR_HEIGHT}" fill="#000000" opacity="0.25" rx="2" data-tc-task="${escapeXml(t.name)}" data-tc-drag="body" pointer-events="none"/>`
         );
       }
+      const endHit = 6;
+      parts.push(
+        `<rect x="${x1 - endHit}" y="${barCy - BAR_HEIGHT / 2 - 2}" width="${endHit * 2}" height="${BAR_HEIGHT + 4}" fill="transparent" data-tc-task="${escapeXml(t.name)}" data-tc-drag="left"/>`
+      );
+      parts.push(
+        `<rect x="${x2 - endHit}" y="${barCy - BAR_HEIGHT / 2 - 2}" width="${endHit * 2}" height="${BAR_HEIGHT + 4}" fill="transparent" data-tc-task="${escapeXml(t.name)}" data-tc-drag="right"/>`
+      );
       parts.push(
         `<text x="${x2 + 6}" y="${barCy + 4}" font-size="11" fill="${COLOR_AXIS}">${formatDate(t.startDate)} \u2013 ${formatDate(t.endDate)}</text>`
       );
       taskBarCenters.set(t.name, { x1, x2, cy: barCy });
+      coords.set(t.name, { x1, x2, cy: barCy, milestone: false });
     }
   }
   for (const t of plan.tasks) {
@@ -422,23 +436,85 @@ function renderGanttSvg(plan) {
     legendX += 20 + item.label.length * 7 + 26;
   }
   parts.push("</svg>");
-  return parts.join("\n");
+  return { svg: parts.join("\n"), coords };
+}
+
+// src/geometry.ts
+var CHART_WIDTH = CANVAS_WIDTH - MARGIN.left - MARGIN.right;
+var DAY_MS = 864e5;
+function pixelToDayOffset(dx, plan) {
+  const spanMs = plan.endDate.getTime() - plan.startDate.getTime();
+  const spanDays = Math.max(1, spanMs / DAY_MS);
+  return Math.round(dx * spanDays / CHART_WIDTH);
+}
+function cloneDate(d) {
+  return new Date(d.getTime());
+}
+function clampAndValidateDates(t, start, end) {
+  if (t.milestone) {
+    t.startDate = start;
+    t.endDate = start;
+    return;
+  }
+  if (end.getTime() < start.getTime() + DAY_MS) {
+    end = new Date(start.getTime() + DAY_MS);
+  }
+  t.startDate = start;
+  t.endDate = end;
+}
+
+// src/serializer.ts
+var THINKCELL_BLOCK_RE = /```thinkcell\s*\n[\s\S]*?```/;
+function serializePlan(plan) {
+  const lines = [];
+  if (plan.title !== "Project Plan")
+    lines.push(`title: ${plan.title}`);
+  lines.push(`start: ${formatDate(plan.startDate)}`);
+  lines.push(`end: ${formatDate(plan.endDate)}`);
+  if (!plan.showToday)
+    lines.push("showToday: false");
+  lines.push("tasks:");
+  for (const t of plan.tasks) {
+    lines.push(`  - name: ${t.name}`);
+    lines.push(`    start: ${formatDate(t.startDate)}`);
+    if (t.milestone) {
+      lines.push(`    milestone: true`);
+    } else {
+      lines.push(`    end: ${formatDate(t.endDate)}`);
+    }
+    if (t.status)
+      lines.push(`    status: ${t.status}`);
+    if (t.owner)
+      lines.push(`    owner: ${t.owner}`);
+    if (t.progress !== void 0)
+      lines.push(`    progress: ${t.progress}`);
+    if (t.lane)
+      lines.push(`    lane: ${t.lane}`);
+    if (t.color)
+      lines.push(`    color: ${t.color}`);
+    if (t.dependsOn && t.dependsOn.length > 0) {
+      lines.push(`    depends: [${t.dependsOn.join(", ")}]`);
+    }
+  }
+  return lines.join("\n");
 }
 
 // src/main.ts
 var ThinkCellPlannerPlugin = class extends import_obsidian.Plugin {
   async onload() {
-    this.registerMarkdownCodeBlockProcessor("thinkcell", (source, el) => {
-      this.renderBlock(source, el);
+    this.registerMarkdownCodeBlockProcessor("thinkcell", (source, el, ctx) => {
+      this.renderBlock(source, el, ctx.sourcePath);
     });
   }
-  renderBlock(source, container) {
+  renderBlock(source, container, sourcePath) {
     container.empty();
     container.addClass("thinkcell-container");
+    let plan;
     let svg;
     try {
-      const plan = parsePlan(source);
-      svg = renderGanttSvg(plan);
+      plan = parsePlan(source);
+      const r = renderGanttSvg(plan);
+      svg = r.svg;
     } catch (e) {
       const errDiv = container.createEl("div", { cls: "thinkcell-error" });
       errDiv.setText(`ThinkCell Planner Error:
@@ -457,23 +533,125 @@ ${e instanceof Error ? e.message : String(e)}`);
       this.downloadSvg(svg);
     });
     const canvas = container.createEl("div", { cls: "thinkcell-canvas" });
+    this.insertSvg(canvas, svg);
+    this.bindDrag(canvas, plan, sourcePath);
+  }
+  insertSvg(canvas, svg) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(svg, "image/svg+xml");
     const svgEl = doc.documentElement;
-    if (svgEl.nodeName === "svg") {
-      canvas.appendChild(canvas.ownerDocument.importNode(svgEl, true));
-    } else {
-      const errDiv = container.createEl("div", { cls: "thinkcell-error" });
-      errDiv.setText("Failed to render SVG.");
+    canvas.appendChild(canvas.ownerDocument.importNode(svgEl, true));
+    return canvas.querySelector("svg");
+  }
+  /** 在交互模式下重绘 SVG */
+  rerender(canvas, plan) {
+    const r = renderGanttSvg(plan);
+    const old = canvas.querySelector("svg");
+    if (old)
+      old.remove();
+    this.insertSvg(canvas, r.svg);
+  }
+  /** 把 plan 写回源文件里的 ```thinkcell 代码块 */
+  async persistToFile(sourcePath, plan) {
+    try {
+      const file = this.app.vault.getAbstractFileByPath(sourcePath);
+      if (!(file instanceof import_obsidian.TFile))
+        return;
+      const content = await this.app.vault.read(file);
+      const newBlock = "```thinkcell\n" + serializePlan(plan) + "\n```";
+      const updated = content.replace(THINKCELL_BLOCK_RE, newBlock);
+      if (updated !== content) {
+        await this.app.vault.modify(file, updated);
+      }
+    } catch (e) {
+      console.error("ThinkCell: persist failed", e);
     }
+  }
+  bindDrag(canvas, plan, sourcePath) {
+    let drag = null;
+    let dirty = false;
+    let lastDayOffset = 0;
+    const getSvgPoint = (ev) => {
+      const cur = canvas.querySelector("svg");
+      if (!cur)
+        return 0;
+      const rect = cur.getBoundingClientRect();
+      const ratio = CANVAS_WIDTH / rect.width;
+      return (ev.clientX - rect.left) * ratio;
+    };
+    const setDragCursor = (mode) => {
+      document.body.removeClass("thinkcell-dragging-move");
+      document.body.removeClass("thinkcell-dragging-resize");
+      if (mode === null)
+        return;
+      document.body.addClass(
+        mode === "left" || mode === "right" ? "thinkcell-dragging-resize" : "thinkcell-dragging-move"
+      );
+    };
+    const onMove = (ev) => {
+      if (!drag)
+        return;
+      const dx = getSvgPoint(ev) - drag.startX;
+      const dayOffset = pixelToDayOffset(dx, plan);
+      if (dayOffset === lastDayOffset)
+        return;
+      lastDayOffset = dayOffset;
+      dirty = true;
+      const t = drag.task;
+      const s = cloneDate(drag.origStart);
+      const e = cloneDate(drag.origEnd);
+      if (drag.mode === "body" || drag.mode === "milestone") {
+        s.setDate(s.getDate() + dayOffset);
+        e.setDate(e.getDate() + dayOffset);
+      } else if (drag.mode === "left") {
+        s.setDate(s.getDate() + dayOffset);
+      } else if (drag.mode === "right") {
+        e.setDate(e.getDate() + dayOffset);
+      }
+      clampAndValidateDates(t, s, e);
+      this.rerender(canvas, plan);
+    };
+    const onUp = () => {
+      if (drag) {
+        setDragCursor(null);
+        drag = null;
+        if (dirty) {
+          void this.persistToFile(sourcePath, plan);
+          new import_obsidian.Notice("Task updated and saved");
+        }
+      }
+      lastDayOffset = 0;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    canvas.addEventListener("mousedown", (ev) => {
+      const target = ev.target;
+      const taskName = target.getAttribute ? target.getAttribute("data-tc-task") : null;
+      if (!taskName)
+        return;
+      const task = plan.tasks.find((t) => t.name === taskName);
+      if (!task)
+        return;
+      drag = {
+        task,
+        mode: target.getAttribute("data-tc-milestone") ? "milestone" : target.getAttribute("data-tc-drag") || "body",
+        startX: getSvgPoint(ev),
+        origStart: cloneDate(task.startDate),
+        origEnd: cloneDate(task.endDate)
+      };
+      dirty = false;
+      lastDayOffset = 0;
+      setDragCursor(drag.mode);
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+      ev.preventDefault();
+    });
   }
   downloadSvg(svg) {
     const blob = new Blob([svg], { type: "image/svg+xml" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
+    const a = document.body.createEl("a", { href: url });
     a.download = `thinkcell-plan-${Date.now()}.svg`;
-    document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);

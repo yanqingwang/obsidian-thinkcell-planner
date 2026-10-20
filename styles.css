@@ -40,6 +40,27 @@
     height: auto;
 }
 
+/* 悬停提示 */
+.thinkcell-canvas [data-tc-task] {
+    cursor: grab;
+}
+
+.thinkcell-canvas [data-tc-drag="left"],
+.thinkcell-canvas [data-tc-drag="right"] {
+    cursor: ew-resize;
+}
+
+/* 拖拽中锁定指针（避免拖动到图表外时光标跳变） */
+body.thinkcell-dragging-move,
+body.thinkcell-dragging-move * {
+    cursor: grabbing !important;
+}
+
+body.thinkcell-dragging-resize,
+body.thinkcell-dragging-resize * {
+    cursor: ew-resize !important;
+}
+
 .thinkcell-error {
     padding: 16px;
     color: var(--text-error);

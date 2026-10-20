@@ -146,8 +146,15 @@ export function parsePlan(source: string): ParsedPlan {
             lanes.push(lane);
         }
 
+        // 兼容 depends / dependsOn 两种写法
+        const rawDeps = t.dependsOn ?? (t as Task & { depends?: string[] }).depends;
+        const dependsOn = rawDeps && Array.isArray(rawDeps) && rawDeps.length > 0
+            ? rawDeps.filter((x): x is string => typeof x === 'string' && x.length > 0)
+            : undefined;
+
         parsedTasks.push({
             ...t,
+            dependsOn,
             startDate,
             endDate,
             rowIndex: idx,

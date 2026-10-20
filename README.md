@@ -52,6 +52,25 @@ tasks:
 ```
 ````
 
+### Interactive editing (drag & drop)
+
+The rendered chart is **directly editable** — drag any bar with the mouse. Changes are written back to the ` ```thinkcell ` block in your note automatically.
+
+| Drag target | Effect |
+|---|---|
+| Middle of a bar | Move the whole task (start and end together) |
+| Left edge of a bar | Change only the start date |
+| Right edge of a bar | Change only the end date |
+| Milestone diamond | Move the milestone |
+
+| | |
+|---|---|
+| Resolution | 1 day (snapped to whole days; the chart's date range stays fixed, so it does not re-scale while dragging) |
+| Minimum duration | 1 day — dragging the right edge past the start clamps instead of inverting |
+| Persistence | Written to the note on mouse release (`Task updated and saved` notice) |
+
+Because the data is a plain YAML code block, other tools can read the same note — DataView, or the companion **Project Manager Dashboard** plugin.
+
 ### Plan Fields
 
 | Field | Required | Description |
@@ -74,7 +93,7 @@ tasks:
 | `owner` | No | Shown after task name |
 | `lane` | No | Swimlane grouping |
 | `color` | No | Custom bar color (overrides status color) |
-| `dependsOn` | No | List of task names; draws dependency arrows |
+| `dependsOn` | No | List of task names; draws dependency arrows. `depends` is accepted as an alias. |
 
 ### Features
 
@@ -88,6 +107,7 @@ tasks:
 - Status **legend** at bottom
 - Think-Cell style color palette
 - **Copy SVG** to clipboard or **Export SVG** file, both with PowerPoint editing instructions
+- **Interactive drag & drop** editing — changes are saved back to the note
 
 ### Installation
 
@@ -158,6 +178,25 @@ tasks:
 ```
 ````
 
+### 图形化拖拽编辑
+
+渲染出的图**可直接拖拽编辑** —— 用鼠标拖动任务条即可，改动会在松手时**自动写回**笔记里的 ` ```thinkcell ` 代码块。
+
+| 拖拽位置 | 效果 |
+|---|---|
+| 任务条中间 | 整体平移（起点和终点一起移动） |
+| 任务条左端 | 只改开始日期 |
+| 任务条右端 | 只改结束日期 |
+| 里程碑菱形 | 移动里程碑 |
+
+| | |
+|---|---|
+| 拖动精度 | 1 天（吸附到整天；图表时间范围固定，拖动过程中不会重新缩放） |
+| 最短时长 | 1 天 —— 右端拖过起点时会被钳制，不会出现结束早于开始 |
+| 持久化 | 松手即写入笔记（提示 `Task updated and saved`） |
+
+由于数据就是普通的 YAML 代码块，其他工具也能读取同一份笔记 —— 例如 DataView，或配套的 **Project Manager Dashboard** 插件。
+
 ### 计划字段
 
 | 字段 | 必填 | 说明 |
@@ -180,7 +219,7 @@ tasks:
 | `owner` | 否 | 负责人，显示在任务名后 |
 | `lane` | 否 | 泳道分组 |
 | `color` | 否 | 自定义颜色（覆盖状态颜色） |
-| `dependsOn` | 否 | 依赖任务名列表，绘制依赖箭头 |
+| `dependsOn` | 否 | 依赖任务名列表，绘制依赖箭头（`depends` 亦可） |
 
 ### 功能特性
 
@@ -194,6 +233,7 @@ tasks:
 - 底部状态**图例**
 - Think-Cell 风格配色
 - **复制 SVG** 到剪贴板或**导出 SVG** 文件，均附带 PPT 编辑说明
+- **图形化拖拽编辑** —— 改动自动写回笔记
 
 ### 安装
 
